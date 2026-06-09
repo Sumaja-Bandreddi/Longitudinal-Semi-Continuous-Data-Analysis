@@ -14,6 +14,7 @@ The analyses are performed separately for:
 - Mosaic loss of chromosome Y (mLOY)
 - Mosaic loss of chromosome X (mLOX)
 - Autosomal mCAs (gains, losses, and copy-neutral loss of heterozygosity)
+
 Our goal is to compare covariate effects and longitudinal growth estimates across modeling frameworks and assess whether the associations reported by Kelly et al. remain consistent when the semi-continuous nature of clonal fraction measurements is explicitly modeled.
 ---
 
