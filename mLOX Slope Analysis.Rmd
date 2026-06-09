@@ -1,0 +1,806 @@
+---
+title: "mLOX Slope Models"
+output: html_document
+date: "2025-12-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(tibble)
+library(tidyr)
+
+
+data <- read_excel("PLCO_longitudinal_mCAs_0s.xlsx") 
+
+mlox <- data  %>%
+  filter(type_FINAL == "mLOX")
+
+```
+
+
+# Models 
+
+## Continuous Models 
+
+### LME with log transformed data 
+
+The Linear Mixed Model used is shown below:
+
+Yij (Yij>0) = B0 + B1t + bi0 + e
+
+```{r}
+library(lme4)
+
+mlox <- mlox %>%
+  group_by(plco_id) %>%
+  mutate(mca_num = dense_rank(mCA_code3)) %>%
+  ungroup()
+
+mlox <- mlox %>%
+  mutate(cf_log = log(cf_FINAL))
+
+mlox_pos <- mlox  %>%
+  filter(cf_FINAL > 0)
+
+
+lmm_log <- lmer(
+  cf_log ~ STUDY_YR + 
+    (1 + STUDY_YR | plco_id),
+  data = mlox_pos
+)
+
+summary(lmm_log)
+
+```
+
+
+### Gamma Distribution
+
+```{r}
+
+library(glmmTMB)
+
+glmm_gamma <- glmmTMB(
+  cf_FINAL ~ STUDY_YR + 
+    (1 + STUDY_YR | plco_id),
+  family = Gamma(link = "log"),
+  data = mlox_pos
+)
+
+summary(glmm_gamma)
+
+```
+
+
+## Logistic Models 
+
+### GLMMIX
+
+The Logistic Generalized Linear Mixed Model used is shown below:
+
+logit(P(Yij>0)) = alpha0 + alpha1t + Ci0
+
+```{r}
+mlox <- mlox %>%
+  mutate(
+    cf_binary = ifelse(cf_FINAL > 0, 1, 0),
+STUDY_YR = as.numeric(STUDY_YR)
+)
+
+glmmix <- glmer(cf_binary ~ STUDY_YR + (1 + STUDY_YR | plco_id), family = binomial(link = "probit"), data = mlox)
+
+summary(glmmix)
+```
+
+
+## Joint Model 
+
+### Baeysian
+
+# log
+
+```{r}
+library(brms)
+
+mlox$Ipos <- as.integer(mlox$cf_FINAL > 0)
+
+log_brms <- brm(
+  bf(
+    Ipos ~ STUDY_YR + (1 + STUDY_YR | p | plco_id),
+    family = bernoulli(link = "probit")
+  ) +
+  bf(
+    cf_FINAL | subset(Ipos == 1) ~ STUDY_YR + (1 + STUDY_YR | p | plco_id),
+    family = lognormal()
+  ),
+  data = mlox,
+  backend = "cmdstanr",
+  threads = threading(4),
+  chains = 4,
+  cores = 4,
+  iter = 1500,
+  warmup = 750,
+  sample_prior = "no",
+  control = list(
+    adapt_delta = 0.85,
+    max_treedepth = 12
+  )
+)
+
+print(summary(log_brms), digits = 3)
+
+```
+
+
+
+# gamma 
+
+```{r}
+
+library(brms)
+
+gamma_brms <- brm(
+ bf(Ipos ~ STUDY_YR + (1 + STUDY_YR | p | plco_id),
+     family = bernoulli(link = "probit")) +
+    bf(cf_FINAL | subset(Ipos == 1) ~ STUDY_YR + (1 + STUDY_YR  | p | plco_id),
+       family = Gamma(link = "log")),
+  data = mlox,
+  backend = "cmdstanr",           
+  threads = threading(4),         
+  chains = 4,
+  cores = 4,
+  iter = 1500,                    
+  warmup = 750,
+  sample_prior = "no",            
+  control = list(
+    adapt_delta = 0.85,           
+    max_treedepth = 12   
+  
+)
+)
+
+print(summary(gamma_brms), digits = 3)
+
+```
+
+## Comparing joint model and seperate model estimates for gamma distribution 
+
+```{r}
+
+results <- data.frame(
+  Term = c(
+    "B0", "B1",
+    "alpha0", "alpha1",
+    
+    "sigma(b0)", "sigma(b1)",
+    "sigma(c0)", "sigma(c1)",
+    "cor(b0,b1)", "cor(b0,c0)", "cor(b1,c0)",
+    "cor(b0,c1)", "cor(b1,c1)", "cor(c0,c1)"
+  ),
+  
+  Combined_Estimate = c(
+    -3.195,  0.047,
+    1.323,  0.051,
+    
+     1.035,  0.090,
+     1.087,  0.069,
+     0.052,  0.825,  0.264,
+     0.033,  0.128, -0.173
+  ),
+  
+  Combined_SE = c(
+    0.080, 0.009,
+    0.182, 0.046,
+    
+    0.194, 0.059,
+    0.060, 0.018,
+    0.425, 0.096, 0.389,
+    0.240, 0.395, 0.147
+  ),
+  
+  Separate_Estimate = c(
+    -3.184517, 0.047768,
+     3.87888, -0.10703,
+    
+     1.07609, 0.07134,
+     5.2157,  0.9789,
+    
+    -0.83, NA, NA,
+     NA, NA, -0.19
+  ),
+  
+  Separate_SE = c(
+    0.078324, 0.008715,
+    0.30288, 0.08686,
+    
+    NA, NA,
+    NA, NA,
+    
+    NA, NA, NA,
+    NA, NA, NA
+  )
+)
+
+print(results)
+
+```
+
+
+
+
+## Comparing joint model and seperate model estimates for log tranformed normal distribution 
+
+```{r}
+
+results <- data.frame(
+  Term = c(
+    "B0", "B1",
+    "alpha0", "alpha1",
+    
+    "sigma(b0)", "sigma(b1)",
+    "sigma(c0)", "sigma(c1)",
+    "cor(b0,b1)", "cor(b0,c0)", "cor(b1,c0)",
+    "cor(b0,c1)", "cor(b1,c1)", "cor(c0,c1)"
+  ),
+  
+  Combined_Estimate = c(
+    -3.238,  0.047,
+     1.319,  0.052,
+    
+     1.032,  0.091,
+     1.100,  0.085,
+     0.051,  0.808,  0.278,
+     0.081,  0.064, -0.221
+  ),
+  
+  Combined_SE = c(
+    0.083, 0.010,
+    0.185, 0.046,
+    
+    0.198, 0.058,
+    0.061, 0.013,
+    0.420, 0.099, 0.381,
+    0.231, 0.435, 0.115
+  ),
+  
+  Separate_Estimate = c(
+    -3.223027, 0.048199,
+     3.87888, -0.10703,
+    
+     1.0929, 0.0847,
+     5.2157, 0.9789,
+    
+    -0.24, NA, NA,
+     NA, NA, -0.19
+  ),
+  
+  Separate_SE = c(
+    0.079378, 0.009304,
+    0.30288, 0.08686,
+    
+    NA, NA,
+    NA, NA,
+    
+    NA, NA, NA,
+    NA, NA, NA
+  )
+)
+
+print(results)
+
+
+```
+
+
+
+## Tobit Model 
+
+```{r}
+
+censor_point <- min(mlox$cf_log[is.finite(mlox$cf_log)])
+censor_point
+
+mlox$cf_log[!is.finite(mlox$cf_log)] <- censor_point
+
+mlox$cens_type <- ifelse(mlox$cf_log == censor_point, -1, 0)
+
+tobit_brms <- brm(
+  bf(cf_log | cens(cens_type) ~ STUDY_YR + (1 + STUDY_YR | ID | plco_id)),
+  family = gaussian(),
+  data = mlox,
+  chains = 4, cores = 4
+)
+
+summary(tobit_brms)
+```
+
+
+```{r}
+
+results <- data.frame(
+  Term = c("Intercept", "STUDY_YR", "sigma(b0)","sigma(b1)", "p(rho)", "sigma(e)"),
+  
+  Estimate = c(-3.53, 0.10, 1.26, 0.05, 0.01, 0.72),
+  SE       = c(0.06, 0.02, 0.08, 0.03, 0.42, 0.03)
+)
+
+print(results)
+
+```
+
+#########################################################################################################
+
+## Becky's analysis 
+
+### Becky's Model 
+
+
+### LME 
+
+```{r}
+library(dplyr)
+library(lme4)
+
+mlox <- mlox %>%
+  mutate(
+    age_65 = age_at_collection - 65,
+    smoking_status = factor(smoking_status, levels = c("Never", "Former", "Current"))
+  )
+
+mlox_pos <- mlox  %>%
+  filter(cf_FINAL > 0)
+
+mlox_lme <- lmer(
+  cf_FINAL ~ age_65 * smoking_status + 
+    (1 + age_65 | plco_id),
+  data = mlox_pos,
+  REML = FALSE
+)
+
+summary(mlox_lme)
+```
+### GLMMIX
+
+```{r}
+
+mlox <- mlox %>%
+  mutate(
+    cf_binary = ifelse(cf_FINAL > 0, 1, 0),
+    age_65 = age_at_collection - 65,
+    smoking_status = factor(smoking_status, levels = c("Never", "Former", "Current"))
+  )
+
+mlox_glmmix <- glmer(
+  cf_binary ~ age_65 * smoking_status + 
+    (1 + age_65 | plco_id),
+  family = binomial(link = "probit"),
+  data = mlox
+)
+
+summary(mlox_glmmix)
+```
+
+### hurdle model 
+
+```{r}
+
+library(dplyr)
+library(brms)
+
+mlox <- mlox %>%
+  mutate(
+    Ipos = as.integer(cf_FINAL > 0),
+    cf_pos = ifelse(cf_FINAL > 0, cf_FINAL, NA_real_),
+    age_65 = age_at_collection - 65,
+    smoking_status = factor(smoking_status, levels = c("Never", "Former", "Current"))
+  )
+
+mlox_hurdle <- brm(
+  bf(
+    Ipos ~ age_65 * smoking_status + (1 + age_65 | p | plco_id),
+    family = bernoulli(link = "probit")
+  ) +
+  bf(
+    cf_pos | subset(Ipos == 1) ~ age_65 * smoking_status + (1 + age_65 | p | plco_id),
+    family = gaussian()
+  ),
+  data = mlox,
+  backend = "cmdstanr",
+  threads = threading(4),
+  chains = 4,
+  cores = 4,
+  iter = 2000,
+  warmup = 750,
+  sample_prior = "no",
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 12
+  )
+)
+
+print(summary(mlox_hurdle), digits = 3)
+```
+
+
+### Table 
+
+```{r}
+results <- data.frame(
+  Term = c(
+    "B0", "B1", 
+    "B2_Former", "B2_Current",
+    "B3_Former", "B3_Current",
+    "alpha0", "alpha1",
+    "alpha2_Former", "alpha2_Current",
+    "alpha3_Former", "alpha3_Current",
+    "sigma(b0)", "sigma(b1)",
+    "sigma(c0)", "sigma(c1)",
+    "cor(b0,b1)", "cor(b0,c0)", "cor(b1,c0)",
+    "cor(b0,c1)", "cor(b1,c1)", "cor(c0,c1)", "sigma(e)"
+  ),
+  
+  Combined_Estimate = c(
+    0.065, 0.003,
+    0.065, 0.038,
+    0.002, -0.002,
+    1.287, 0.089,
+    0.619, 0.097,
+   -0.037, 0.001,
+    1.247, 0.097,
+    0.162, 0.004,
+    0.282, 0.711, 0.631,
+    0.069, 0.492, 0.344,
+    0.036
+  ),
+  
+  Combined_SE = c(
+    0.015, 0.001,
+    0.025, 0.037,
+    0.002, 0.003,
+    0.195, 0.030,
+    0.321, 0.391,
+    0.043, 0.057,
+    0.235, 0.041,
+    0.008, 0.002,
+    0.309, 0.123, 0.256,
+    0.330, 0.318, 0.232,
+    0.002
+  ),
+  
+  Separate_Estimate = c(
+    0.068, 0.003,
+    0.065, 0.038,
+    0.002, -0.003,
+    1.844, 0.167,
+    0.400, -0.027,
+   -0.070, 0.012,
+    1.485, 0.099,
+    0.160, 0.004,
+    1.000, NA, NA,
+    NA, NA, 0.410,
+    0.036
+  ),
+  
+  Separate_SE = c(
+    0.015, 0.001,
+    0.025, 0.035,
+    0.002, 0.003,
+    0.369, 0.042,
+    0.287, 0.395,
+    0.043, 0.060,
+    NA, NA,
+    NA, NA,
+    NA, NA, NA,
+    NA, NA, NA,
+    NA
+  )
+)
+
+print(results)
+
+```
+
+
+
+### Tobit Model 
+
+```{r}
+library(brms)
+
+censor_point <- min(mlox$cf_FINAL[is.finite(mlox$cf_FINAL)])
+
+mlox$cf_FINAL[!is.finite(mlox$cf_FINAL)] <- censor_point
+
+mlox$cens_type <- ifelse(mlox$cf_FINAL == censor_point, -1, 0)
+
+mlox_tobit <- brm(
+  bf(
+    cf_FINAL | cens(cens_type) ~ age_65 * smoking_status + (1 + age_65 | p | plco_id)
+  ),
+  family = gaussian(),
+  data = mlox,
+  chains = 4,
+  cores = 4
+)
+
+print(summary(mlox_tobit), digits = 3)
+```
+
+```{r}
+results <- data.frame(
+  Term = c(
+    "Intercept", 
+    "age_65",
+    "smoking_Former",
+    "smoking_Current",
+    "age_65:smoking_Former",
+    "age_65:smoking_Current",
+    "sigma(b0)", 
+    "sigma(b1)", 
+    "p(rho)", 
+    "sigma(e)"
+  ),
+  
+  Estimate = c(
+    0.049,
+    0.004,
+    0.067,
+    0.037,
+   -0.003,
+   -0.002,
+    0.160,
+    0.002,
+    0.179,
+    0.057
+  ),
+  
+  SE = c(
+    0.015,
+    0.001,
+    0.025,
+    0.036,
+    0.002,
+    0.003,
+    0.008,
+    0.001,
+    0.459,
+    0.002
+  )
+)
+
+print(results)
+```
+
+
+
+## Figure 3 
+
+### LME Plot 
+
+```{r}
+
+library(lme4)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(ggeffects)
+
+age_fix <- function(x) {
+  x + 65
+}
+
+# Create plot
+plot_curve <- function(lmer_model, predict_term, graph_name) {
+  
+  Profile <- predict_response(lmer_model, terms = predict_term)
+  
+  plot(Profile) +
+    labs(x = "Age (Years)", y = "Clonal Fraction") +
+    scale_color_manual(
+      values = c(
+        "Never" = "#D55E00",
+        "Current" = "#0072B2",
+        "Former" = "#009E73"
+      )
+    ) +
+    scale_fill_manual(
+      values = c(
+        "Never" = "#D55E00",
+        "Current" = "#0072B2",
+        "Former" = "#009E73"
+      )
+    ) +
+    scale_x_continuous(label = age_fix, limits = c(-11, 14),
+                       breaks = c(-10, -5, 0, 5, 10, 14)) +
+    ggtitle(graph_name) +
+    theme_minimal() +
+    theme(legend.position = "none")
+}
+
+
+mLOX_fit <- lmer(cf_FINAL ~ age_65 + 
+                  smoking_status + 
+                  smoking_status*age_65 +
+                  (age_65|plco_id), 
+                 data=mlox)
+
+summary(mLOX_fit)
+
+
+#Create Graph for results
+p_lme <- plot_lmer_curve(mLOX_fit, 
+                      predict_term = c("age_65","smoking_status"),
+                      "mLOY") +
+  labs(title = NULL, x = "Age (Years)", y = "Clonal Fraction", smoking_status = "Smoking Status") +
+  scale_x_continuous(label = age_fix, limits = c(-11,14), breaks = c(-10,-5,0,5,10,14)) +
+  scale_y_continuous(limits = c(-0.10, 0.60), breaks = c(0.00,0.10,0.20,0.30,0.40,0.50,0.60)) +
+  ggtitle("mLOX LMM") +
+  theme_minimal() + 
+    theme(
+  legend.position = "none",
+  axis.title.x = element_text(size = 18),
+  axis.title.y = element_text(size = 18),
+  axis.text.x = element_text(size = 14),
+  axis.text.y = element_text(size = 14),
+  plot.title = element_text(size = 20, face = "bold"),
+  legend.title = element_text(size = 16),
+  legend.text = element_text(size = 14)
+)
+
+#Inspect Graph
+p_lme
+
+ggsave("mLOX_LMM.pdf", p_lme, width = 6, height = 5)
+
+```
+
+### Hurdle Plot 
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+age_fix <- function(x) {
+  x + 65
+}
+
+# Prediction grid
+pred_grid <- expand_grid(
+  age_65 = seq(min(mlox$age_65, na.rm = TRUE),
+               max(mlox$age_65, na.rm = TRUE),
+               length.out = 500),
+  smoking_status = levels(mlox$smoking_status),
+  Ipos = 1L
+)
+
+# Get predictions for positive part
+p_cf_df <- fitted(
+  mlox_hurdle,
+  newdata = pred_grid,
+  resp = "cfpos",
+  re_formula = NA,
+  summary = TRUE
+) %>%
+  as.data.frame() %>%
+  bind_cols(pred_grid)
+
+p_cf_df$smoking_status <- factor(
+  p_cf_df$smoking_status,
+  levels = c("Never", "Former", "Current")
+)
+
+p_hurdle <- ggplot(p_cf_df, aes(x = age_65, y = Estimate, color = smoking_status, fill = smoking_status)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), alpha = 0.10, color = NA) +
+  geom_line(linewidth = 1) +
+  labs(title = NULL, x = "Age (Years)", y = "Clonal Fraction") +
+  scale_color_manual(
+    values = c(
+      "Never" = "#D55E00",
+      "Current" = "#0072B2",
+      "Former" = "#009E73"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Never" = "#D55E00",
+      "Current" = "#0072B2",
+      "Former" = "#009E73"
+    )
+  ) +
+  scale_x_continuous(
+    labels = age_fix,
+    limits = c(-11, 14),
+    breaks = c(-10, -5, 0, 5, 10, 14)
+  ) +
+  scale_y_continuous(
+    limits = c(-0.10, 0.60),
+    breaks = c(0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60)
+  ) +
+  ggtitle("mLOX Hurdle") +
+  theme_minimal() +
+    theme(
+  legend.position = "none",
+  axis.title.x = element_text(size = 18),
+  axis.title.y = element_text(size = 18),
+  axis.text.x = element_text(size = 14),
+  axis.text.y = element_text(size = 14),
+  plot.title = element_text(size = 20, face = "bold"),
+  legend.title = element_text(size = 16),
+  legend.text = element_text(size = 14)
+)
+
+# Show plot
+p_hurdle
+
+ggsave("mLOX_hurdle.pdf", p_hurdle, width = 6, height = 5)
+
+```
+
+
+
+## Tobit Plot 
+
+```{r}
+library(brms)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(ggeffects)
+
+p_tobit <- plot_curve(
+  mlox_tobit,
+  predict_term = c("age_65", "smoking_status"),
+  "mLOX"
+) +
+  labs(
+    title = NULL,
+    x = "Age (Years)",
+    y = "Clonal Fraction",
+    smoking_status = "Smoking Status"
+  ) +
+  scale_x_continuous(
+    labels = age_fix,
+    limits = c(-11, 14),
+    breaks = c(-10, -5, 0, 5, 10, 14)
+  ) +
+  scale_y_continuous(
+    limits = c(-0.10, 0.60),
+    breaks = c(0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60)
+  ) +
+  ggtitle("mLOX Tobit") +
+  theme_minimal() +
+  theme(
+  legend.position = "none",
+  axis.title.x = element_text(size = 18),
+  axis.title.y = element_text(size = 18),
+  axis.text.x = element_text(size = 14),
+  axis.text.y = element_text(size = 14),
+  plot.title = element_text(size = 20, face = "bold"),
+  legend.title = element_text(size = 16),
+  legend.text = element_text(size = 14)
+)
+
+p_tobit
+
+ggsave("mLOX_tobit.pdf", p_tobit, width = 6, height = 5)
+```
+
+```{r}
+
+mLOX_plot <- p_lme + p_hurdle + p_tobit +
+  plot_layout(ncol = 3)
+
+mLOX_plot
+
+ggsave("mLOX_plots.png", mLOX_plot, width = 14, height = 4)
+
+```
