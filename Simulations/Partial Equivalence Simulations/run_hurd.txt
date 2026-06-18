@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH --job-name=sim_hurdle      
+#SBATCH --array=1-100             
+#SBATCH --cpus-per-task=4        
+#SBATCH --mem=64G                    
+#SBATCH --time=3:00:00              
+#SBATCH --output=sim_hurdle_%A_%a.out  
+#SBATCH --error=sim_hurdle_%A_%a.err   
+#SBATCH --gres=lscratch:50
+
+module load R/4.2.0
+
+Rscript "/home/bandreddis2/Partial_Equivalence_Simulations/hurd_hurd.R"
