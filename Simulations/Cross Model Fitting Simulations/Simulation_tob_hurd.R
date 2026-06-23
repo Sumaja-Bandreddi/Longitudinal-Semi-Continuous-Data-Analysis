@@ -48,7 +48,7 @@ simulate_and_fit_tobit <- function(seed) {
   # --------------------------
   # 5) Left censoring on ORIGINAL scale
   # --------------------------
-  Y_obs <- ifelse(Y_star <= c, c, Y_star)
+  Y_obs <- ifelse(Y_star <= c, 0, Y_star)
   cens  <- ifelse(Y_star <= c, "left", "none")
   
   dat <- data.frame(
