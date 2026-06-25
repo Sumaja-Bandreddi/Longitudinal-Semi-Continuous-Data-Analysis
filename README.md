@@ -158,7 +158,7 @@ print(hurdle_results)
 
 The hurdle model separates the probability of being above the censoring limit from the positive outcome distribution. In this simulation setting, the data are generated from a Tobit model, so this fit is intentionally cross-model.
 
-## Running the Provided Simulation Scripts
+### Running the Provided Simulation Scripts
 
 Each simulation script is written to run one simulation replicate at a time. The replicate seed is read from the SLURM array task ID:
 
@@ -186,7 +186,7 @@ The scripts save one CSV file per replicate:
 - `results_tob_tob/sim_<task_id>.csv` for the Tobit fit;
 - `results_tob_hurd/sim_<task_id>.csv` for the hurdle fit.
 
-## Output Parameters
+### Output Parameters
 
 The Tobit script returns posterior summaries for:
 
@@ -206,7 +206,7 @@ The hurdle script returns posterior summaries for:
 - `cor_id__Ipos_Intercept__Y_Intercept`: correlation between subject-level random intercepts across the binary and positive outcome parts;
 - `sigma_Y`: residual standard deviation for the positive lognormal outcome model.
 
-## Simulation Notes
+### Simulation Notes
 
 The data-generating model uses:
 
@@ -217,8 +217,6 @@ The data-generating model uses:
 - random-intercept standard deviation `sigma_b = 0.8`;
 - residual standard deviation `sigma_eps = 0.6`;
 - censoring threshold `censor_limit = 0.7`.
-
-The correctly specified Tobit model is expected to recover the Tobit data-generating parameters across repeated simulation replicates. The hurdle model is fit to the same Tobit-generated data to evaluate how a two-part model behaves when the true mechanism is left censoring rather than a structural zero process.
 
 
 ## Repository Structure
