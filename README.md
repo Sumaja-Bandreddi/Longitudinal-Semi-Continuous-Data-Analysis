@@ -9,6 +9,218 @@ The analyses focus on two main modeling frameworks:
 
 The repository combines methodological simulations with an applied clonal hematopoiesis analysis using longitudinal mosaic chromosomal alteration data from the Prostate, Lung, Colorectal, and Ovarian Cancer Screening Trial.
 
+## Usage Examples
+
+The example below generates one longitudinal semi-continuous dataset from a Tobit model and then fits two models to the same simulated data:
+
+1. a correctly specified lognormal Tobit model;
+2. a two-part hurdle model.
+
+### Generate data from a Tobit model
+
+```r
+library(brms)
+library(dplyr)
+
+generate_tobit_data <- function(seed = 1,
+                                n_id = 1000,
+                                m = 5,
+                                beta_0 = 0.5,
+                                beta_t = 0.4,
+                                sigma_b = 0.8,
+                                sigma_eps = 0.6,
+                                censor_limit = 0.7) {
+  set.seed(seed)
+
+  t_grid <- seq(0, 1, length.out = m)
+
+  id <- rep(seq_len(n_id), each = m)
+  t <- rep(t_grid, times = n_id)
+  n <- length(id)
+
+  b_i0 <- rnorm(n_id, mean = 0, sd = sigma_b)
+  b0 <- b_i0[id]
+
+  mu_log <- beta_0 + beta_t * t + b0
+  log_y_star <- rnorm(n, mean = mu_log, sd = sigma_eps)
+  y_star <- exp(log_y_star)
+
+  censored <- y_star <= censor_limit
+
+  data.frame(
+    id = id,
+    t = t,
+    Y = ifelse(censored, 0, y_star),
+    Y_cens = ifelse(censored, censor_limit, y_star),
+    cens = ifelse(censored, "left", "none")
+  ) %>%
+    mutate(
+      Ipos = as.integer(Y > censor_limit)
+    )
+}
+
+dat <- generate_tobit_data(seed = 1)
+
+mean(dat$cens == "left")
+head(dat)
+```
+
+In this example, `Y` is the observed semi-continuous outcome, where censored values are recorded as zero. The variable `Y_cens` stores the censoring point for censored observations and is used in the Tobit likelihood.
+
+### Example 1: Fit a lognormal Tobit model
+
+```r
+fit_tobit_model <- function(dat) {
+  brm(
+    bf(Y_cens | cens(cens) ~ t + (1 | id)),
+    data = dat,
+    family = lognormal(),
+    chains = 4,
+    cores = 4,
+    iter = 4000,
+    warmup = 2000,
+    control = list(adapt_delta = 0.95),
+    backend = "rstan"
+  )
+}
+
+summarize_tobit_fit <- function(fit) {
+  res <- as.data.frame(
+    posterior_summary(fit)[
+      c(
+        "b_Intercept",
+        "b_t",
+        "sd_id__Intercept",
+        "sigma"
+      ),
+      c("Estimate", "Est.Error")
+    ]
+  )
+
+  res$parameter <- rownames(res)
+  rownames(res) <- NULL
+  res
+}
+
+tobit_fit <- fit_tobit_model(dat)
+tobit_results <- summarize_tobit_fit(tobit_fit)
+
+print(tobit_results)
+```
+
+The Tobit model estimates the fixed intercept and time effect, the random-intercept standard deviation, and the residual log-scale standard deviation.
+
+### Example 2: Fit a hurdle model to the same Tobit-generated data
+
+```r
+fit_hurdle_model <- function(dat) {
+  brm(
+    bf(Ipos ~ t + (1 | p | id), family = bernoulli(link = "probit")) +
+      bf(Y | subset(Ipos == 1) + trunc(lb = 0.7) ~ t + (1 | p | id),
+         family = lognormal()),
+    data = dat,
+    chains = 4,
+    cores = 4,
+    iter = 4000,
+    warmup = 2000,
+    control = list(adapt_delta = 0.95),
+    backend = "rstan"
+  )
+}
+
+summarize_hurdle_fit <- function(fit) {
+  res <- as.data.frame(
+    posterior_summary(fit)[
+      c(
+        "b_Y_Intercept",
+        "b_Y_t",
+        "b_Ipos_Intercept",
+        "b_Ipos_t",
+        "sd_id__Y_Intercept",
+        "sd_id__Ipos_Intercept",
+        "cor_id__Ipos_Intercept__Y_Intercept",
+        "sigma_Y"
+      ),
+      c("Estimate", "Est.Error")
+    ]
+  )
+
+  res$parameter <- rownames(res)
+  rownames(res) <- NULL
+  res
+}
+
+hurdle_fit <- fit_hurdle_model(dat)
+hurdle_results <- summarize_hurdle_fit(hurdle_fit)
+
+print(hurdle_results)
+```
+
+The hurdle model separates the probability of being above the censoring limit from the positive outcome distribution. In this simulation setting, the data are generated from a Tobit model, so this fit is intentionally cross-model.
+
+## Running the Provided Simulation Scripts
+
+Each simulation script is written to run one simulation replicate at a time. The replicate seed is read from the SLURM array task ID:
+
+```r
+task_id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
+res <- simulate_and_fit_tobit(seed = task_id)
+```
+
+For example, to run one replicate interactively:
+
+```r
+Sys.setenv(SLURM_ARRAY_TASK_ID = 1)
+source("Correctly Specified Model Simulations/Simulation_tob_tob.R")
+```
+
+or:
+
+```r
+Sys.setenv(SLURM_ARRAY_TASK_ID = 1)
+source("Cross Model Fitting Simulations/Simulation_tob_hurd.R")
+```
+
+The scripts save one CSV file per replicate:
+
+- `results_tob_tob/sim_<task_id>.csv` for the Tobit fit;
+- `results_tob_hurd/sim_<task_id>.csv` for the hurdle fit.
+
+## Output Parameters
+
+The Tobit script returns posterior summaries for:
+
+- `b_Intercept`: fixed intercept on the log scale;
+- `b_t`: fixed time effect on the log scale;
+- `sd_id__Intercept`: subject-level random-intercept standard deviation;
+- `sigma`: residual standard deviation on the log scale.
+
+The hurdle script returns posterior summaries for:
+
+- `b_Y_Intercept`: fixed intercept for the positive lognormal outcome model;
+- `b_Y_t`: fixed time effect for the positive lognormal outcome model;
+- `b_Ipos_Intercept`: fixed intercept for the binary positive-outcome model;
+- `b_Ipos_t`: fixed time effect for the binary positive-outcome model;
+- `sd_id__Y_Intercept`: subject-level random-intercept standard deviation for the positive outcome model;
+- `sd_id__Ipos_Intercept`: subject-level random-intercept standard deviation for the binary model;
+- `cor_id__Ipos_Intercept__Y_Intercept`: correlation between subject-level random intercepts across the binary and positive outcome parts;
+- `sigma_Y`: residual standard deviation for the positive lognormal outcome model.
+
+## Simulation Notes
+
+The data-generating model uses:
+
+- `n_id = 1000` subjects;
+- `m = 5` repeated measurements per subject;
+- time scaled from 0 to 1;
+- fixed effects `beta_0 = 0.5` and `beta_t = 0.4`;
+- random-intercept standard deviation `sigma_b = 0.8`;
+- residual standard deviation `sigma_eps = 0.6`;
+- censoring threshold `censor_limit = 0.7`.
+
+The correctly specified Tobit model is expected to recover the Tobit data-generating parameters across repeated simulation replicates. The hurdle model is fit to the same Tobit-generated data to evaluate how a two-part model behaves when the true mechanism is left censoring rather than a structural zero process.
+
+
 ## Repository Structure
 
 ```text
@@ -166,3 +378,15 @@ The repository produces:
 ## Purpose
 
 This project supports methodological comparison and applied interpretation for longitudinal semi-continuous biomedical outcomes. The simulations clarify when Tobit and hurdle models perform well or fail, while the PLCO application shows how these models affect inference for clonal hematopoiesis and mosaic chromosomal alteration growth.
+
+## References 
+
+Su, L. and Tom, B. D. and Farewell, V. T. (2009) Bias in 2-part mixed models for longitudinal semicontinuous data. Biostatistics, 10(2): 374-389.
+
+Albert, P. S. and Shen, J. (2005) Modelling longitudinal semicontinuous emesis volume data with serial correlation in an acupuncture clinical trial. Journal of the Royal Statistical Society Series C: Applied Statistics, 54(4): 707-720.
+
+Buerkner, Paul-Christian (2017) brms: An R package for Bayesian multilevel models using Stan. Journal of Statistical Software, 80(1): 1-28.
+
+Amemiya, Takeshi (1984) Tobit models: A survey. Journal of Econometrics, 24(1-2): 3-61.
+
+Kelly, R. L. and Brown, D. W. and Zhou, W. and Hubbard, A. K. and Young, C. D. and Barnao, K. M. and Klein, A. and Dutta, D. and Vogt, A. and Liu, J. and Wang, J. and Huang, W.-Y. and Freedman, N. D. and Chanock, S. J. and Albert, P. S. and Machiela, M. J. (2026) Longitudinal characterization of mosaic chromosomal alterations identifies factors influencing clonal dynamics of leukocytes. Nature Communications. Under revision.
