@@ -30,380 +30,6 @@ auto <- df1[!(df1$chrom == "chrX"),]
 
 # Models 
 
-## Continuous Models 
-
-### LME with log transformed data 
-
-The Linear Mixed Model used is shown below:
-
-Yij (Yij>0) = B0 + B1t + bi0 + e
-
-```{r}
-library(lme4)
-
-auto <- auto %>%
-  group_by(plco_id) %>%
-  mutate(mca_num = dense_rank(mCA_code3)) %>%
-  ungroup()
-
-auto <- auto %>%
-  mutate(cf_log = log(cf_FINAL))
-
-auto_pos <- auto  %>%
-  filter(cf_FINAL > 0)
-
-
-lmm_log <- lmer(
-  cf_log ~ STUDY_YR + 
-    (1 + STUDY_YR | plco_id / mca_num),
-  data = auto_pos
-)
-
-summary(lmm_log)
-
-```
-
-### Gamma Distribution
-
-```{r}
-
-library(glmmTMB)
-
-glmm_gamma <- glmmTMB(
-  cf_FINAL ~ STUDY_YR + 
-    (1 + STUDY_YR | plco_id / mca_num),
-  family = Gamma(link = "log"),
-  data = auto_pos
-)
-
-summary(glmm_gamma)
-
-```
-
-## Logistic Models 
-
-### GLMMIX
-
-The Logistic Generalized Linear Mixed Model used is shown below:
-
-logit(P(Yij>0)) = alpha0 + alpha1t + Ci0
-
-```{r}
-auto <- auto %>%
-  mutate(
-    cf_binary = ifelse(cf_FINAL > 0, 1, 0),
-STUDY_YR = as.numeric(STUDY_YR)
-)
-
-glmmix <- glmer(cf_binary ~ STUDY_YR + (1 + STUDY_YR | plco_id / mca_num), family = binomial(link = "probit"), data = auto)
-
-summary(glmmix)
-```
-
-## Joint Model 
-
-### Baeysian
-
-# log
-
-```{r}
-library(brms)
-
-auto$Ipos <- as.integer(auto$cf_FINAL > 0)
-
-log_brms_auto <- brm(
-  bf(
-    Ipos ~ STUDY_YR +
-      (1 + STUDY_YR | ID1 | plco_id) +
-      (1 + STUDY_YR | ID2 | plco_id:mca_num),
-    family = bernoulli(link = "probit")
-  ) +
-  bf(
-    cf_FINAL | subset(Ipos == 1) ~ STUDY_YR +              
-      (1 + STUDY_YR | ID1 | plco_id) +
-      (1 + STUDY_YR | ID2 | plco_id:mca_num),
-    family = lognormal()
-  ),
-  data = auto,
-  backend = "cmdstanr",           
-  threads = threading(4),         
-  chains = 4,
-  cores = 4,
-  iter = 1500,                    
-  warmup = 750,
-  sample_prior = "no",            
-  control = list(
-    adapt_delta = 0.85,           
-    max_treedepth = 12   
-)
-)
-
-print(summary(log_brms_auto), digits = 3)
-
-```
-
-# gamma 
-
-```{r}
-
-gamma_brms_auto <- brm(
-  bf(
-    Ipos ~ STUDY_YR +
-      (1 + STUDY_YR | ID1 | plco_id) +
-      (1 + STUDY_YR | ID2 | plco_id:mca_num),
-    family = bernoulli(link = "probit")
-  ) +
-  bf(
-    cf_FINAL | subset(Ipos == 1) ~ STUDY_YR +              
-      (1 + STUDY_YR | ID1 | plco_id) +
-      (1 + STUDY_YR | ID2 | plco_id:mca_num),
-    family = Gamma(link = "log")
-  ),
-  data = auto,
-  backend = "cmdstanr",           
-  threads = threading(4),         
-  chains = 4,
-  cores = 4,
-  iter = 1500,                    
-  warmup = 750,
-  sample_prior = "no",            
-  control = list(
-    adapt_delta = 0.85,           
-    max_treedepth = 12   
-)
-)
-
-print(summary(gamma_brms_auto), digits = 3)
-```
-
-
-
-## Comparing joint model and seperate model estimates for gamma distribution 
-
-```{r}
-
-results <- data.frame(
-  Term = c(
-    "B0", "B1",
-    "alpha0", "alpha1",
-    
-    # random effects: plco_id (i)
-    "sigma(b0_i)", "sigma(b1_i)",
-    "sigma(c0_i)", "sigma(c1_i)",
-    "cor(b0_i,b1_i)", "cor(b0_i,c0_i)", "cor(b1_i,c0_i)",
-    "cor(b0_i,c1_i)", "cor(b1_i,c1_i)", "cor(c0_i,c1_i)",
-    
-    # random effects: mca_num within plco_id (ij)
-    "sigma(b0_ij)", "sigma(b1_ij)",
-    "sigma(c0_ij)", "sigma(c1_ij)",
-    "cor(b0_ij,b1_ij)", "cor(b0_ij,c0_ij)", "cor(b1_ij,c0_ij)",
-    "cor(b0_ij,c1_ij)", "cor(b1_ij,c1_ij)", "cor(c0_ij,c1_ij)"
-  ),
-  
-  ## ======================
-  ## Combined (MV bernoulli + gamma)
-  ## ======================
-  Combined_Estimate = c(
-    -2.786,  0.072,
-     0.240,  0.042,
-    
-     0.715,  0.107,
-     0.537,  0.077,
-    0.332, 0.744, 0.498,
-    0.612,  0.831, 0.678,
-    
-     0.671,  0.066,
-     0.543,  0.148,
-    -0.424,  0.623, -0.570,
-    -0.551,  0.818, -0.606
-  ),
-  
-  Combined_SE = c(
-    0.042, 0.008,
-    0.055, 0.014,
-    
-    0.038, 0.007,
-    0.070, 0.015,
-    0.067, 0.083, 0.140,
-    0.105, 0.094, 0.145,
-    
-    0.030, 0.009,
-    0.142, 0.032,
-    0.083, 0.111, 0.197,
-    0.109, 0.117, 0.197
-  ),
-  
-  ## ======================
-  ## Separate models
-  ## ======================
-  Separate_Estimate = c(
-    -2.757782, 0.063675,
-     0.217060, 0.045860,
-    
-     0.70199, 0.10696,
-     0.42571, 0.01578,
-    -0.30, NA, NA,
-    NA, NA, -0.310,
-    
-     0.65185, 0.05747,
-     0.17537, 0.03470,
-    -0.36, NA, NA,
-    NA, NA, -0.003
-  ),
-  
-  Separate_SE = c(
-    0.036705, 0.005853,
-    0.04799, 0.01225,
-    
-    NA, NA,
-    NA, NA,
-    NA, NA, NA,
-    NA, NA, NA,
-    
-    NA, NA,
-    NA, NA,
-    NA, NA, NA,
-    NA, NA, NA
-  )
-)
-
-print(results)
-
-
-```
-
-
-## Comparing joint model and seperate model estimates for log tranformed normal distribution 
-
-```{r}
-
-results <- data.frame(
-  Term = c(
-    "B0", "B1",
-    "alpha0", "alpha1",
-    
-    "sigma(b0_i)", "sigma(b1_i)",
-    "sigma(c0_i)", "sigma(c1_i)",
-    "cor(b0_i,b1_i)", "cor(b0_i,c0_i)", "cor(b1_i,c0_i)",
-    "cor(b0_i,c1_i)", "cor(b1_i,c1_i)", "cor(c0_i,c1_i)",
-    
-    "sigma(b0_ij)", "sigma(b1_ij)",
-    "sigma(c0_ij)", "sigma(c1_ij)",
-    "cor(b0_ij,b1_ij)", "cor(b0_ij,c0_ij)", "cor(b1_ij,c0_ij)",
-    "cor(b0_ij,c1_ij)", "cor(b1_ij,c1_ij)", "cor(c0_ij,c1_ij)"
-  ),
-  
-  Combined_Estimate = c(
-    -2.812,  0.074,
-     0.239,  0.042,
-    
-     0.720,  0.109,
-     0.542,  0.078,
-    -0.344,  0.766, -0.649,
-    -0.489,  0.810, -0.678,
-    
-     0.678,  0.070,
-     0.570,  0.154,
-    -0.443,  0.620, -0.555,
-    -0.629,  0.821, -0.647
-  ),
-  
-  Combined_SE = c(
-    0.044, 0.008,
-    0.055, 0.014,
-    
-    0.038, 0.007,
-    0.075, 0.016,
-    0.068, 0.077, 0.143,
-    0.113, 0.102, 0.149,
-    
-    0.030, 0.009,
-    0.128, 0.029,
-    0.077, 0.103, 0.100,
-    0.180, 0.124, 0.152
-  ),
-  
-  Separate_Estimate = c(
-    -2.757784, 0.063675,
-     0.217060, 0.045860,
-    
-     0.70200, 0.10697,
-     0.42571, 0.01578,
-    -0.30, NA, NA,
-    NA, NA, -1.00,
-    
-     0.65184, 0.05747,
-     0.17537, 0.03470,
-    -0.38, NA, NA,
-    NA, NA, 1.00
-  ),
-  
-  Separate_SE = c(
-    0.036705, 0.005853,
-    0.04799, 0.01225,
-    
-    NA, NA,
-    NA, NA,
-    NA, NA, NA,
-    NA, NA, NA,
-    
-    NA, NA,
-    NA, NA,
-    NA, NA, NA,
-    NA, NA, NA
-  )
-)
-
-print(results)
-
-
-```
-
-## Tobit Model 
-
-```{r}
-
-censor_point <- min(auto$cf_log[is.finite(auto$cf_log)])
-censor_point
-
-auto$cf_log[!is.finite(auto$cf_log)] <- censor_point
-
-auto$cens_type <- ifelse(auto$cf_log == censor_point, -1, 0)
-
-tobit_brms <- brm(
-  bf(
-    cf_log | cens(cens_type) ~ STUDY_YR +
-      (1 + STUDY_YR | ID1 | plco_id) +
-      (1 + STUDY_YR | ID2 | plco_id:mca_num)
-  ),
-  family = gaussian(),
-  data = auto,
-  cores = 4, chains = 4
-)
-
-summary(tobit_brms)
-```
-
-
-```{r}
-
-results <- data.frame(
-  Term = c("Intercept", "STUDY_YR", "sigma(b0_i)", "sigma(b1_i)",
-           "sigma(b0_ij)",  "sigma(b1_ij)", "cor(b0_i,b1_i)", "cor(b0_ij,b1_ij)", "sigma(e)"),
-  
-  Estimate = c(-4.00, 0.09, 0.87, 0.06, 0.91, 0.20, 0.56, 0.49, 1.57),
-  SE       = c(0.07, 0.02, 0.09, 0.03, 0.14, 0.04, 0.32, 0.20, 0.04)
-)
-
-print(results)
-
-```
-
-
-#########################################################################################################
-
-## Becky's analysis 
-
 ### Becky's Model 
 
 ```{r}
@@ -464,7 +90,7 @@ auto_glmmix <- glmer(
 summary(auto_glmmix)
 ```
 
-### hurdle model 
+### Hurdle Model 
 
 ```{r}
 
@@ -508,7 +134,7 @@ print(summary(auto_hurdle), digits = 3)
 
 ```
 
-### Table 
+### Hurdle Table 
 
 ```{r}
 results <- data.frame(
@@ -569,9 +195,6 @@ print(results)
 ```
 
 
-
-
-
 ### Tobit Model 
 
 ```{r}
@@ -597,7 +220,7 @@ auto_tobit <- brm(
 print(summary(auto_tobit), digits = 3)
 
 ```
-### Table 
+### Tobit Table 
 
 ```{r}
 results <- data.frame(
@@ -657,7 +280,7 @@ print(results)
 ```
 
 
-## Figure 3 
+## Figure
 
 ### LME Plot 
 
