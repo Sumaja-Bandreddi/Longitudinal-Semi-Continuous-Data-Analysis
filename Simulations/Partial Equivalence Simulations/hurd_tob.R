@@ -30,7 +30,7 @@ simulate_hurdle_fit_tobit <- function(seed) {
   sigma_b   <- 0.8
   sigma_eps <- 0.6
   
-  c = 0.5
+  c = 0.7
   
   # --------------------------
   # 3) Draw random intercepts
