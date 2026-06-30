@@ -18,8 +18,6 @@ The example below generates one longitudinal semi-continuous dataset from a Tobi
 
 ### Generate data from a Tobit model
 
-### Simulation Notes
-
 The data-generating model uses:
 
 - `n_id = 1000` subjects;
