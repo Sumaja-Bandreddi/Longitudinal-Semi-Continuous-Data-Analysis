@@ -140,7 +140,7 @@ A lognormal Tobit model is used because the latent response is generated on the 
 ### Example 1: Fit a lognormal Tobit model
 
 ```r
-#The following function fits a Bayesian Tobit mixed-effects model to the simulated data using `brms`. The model includes a fixed effect for time, a subject-specific random intercept, and a lognormal response distribution with left censoring.
+# The following function fits a Bayesian Tobit mixed-effects model to the simulated data using `brms`. The model includes a fixed effect for time, a subject-specific random intercept, and a lognormal response distribution with left censoring.
 
 fit_tobit_model <- function(dat) {
   brm(
@@ -156,7 +156,7 @@ fit_tobit_model <- function(dat) {
   )
 }
 
-#The following function extracts the posterior means and posterior standard deviations for the fixed effects, random-intercept standard deviation, and residual standard deviation from the fitted Tobit model.
+# The following function extracts the posterior means and posterior standard deviations for the fixed effects, random-intercept standard deviation, and residual standard deviation from the fitted Tobit model.
 
 summarize_tobit_fit <- function(fit) {
   res <- as.data.frame(
@@ -186,6 +186,8 @@ The Tobit model estimates the fixed intercept and time effect, the random-interc
 ### Example 2: Fit a hurdle model to the same Tobit-generated data
 
 ```r
+# The following function fits a Bayesian hurdle mixed-effects model to the simulated data using `brms`. The model consists of a probit regression for the probability of a positive outcome and a truncated lognormal regression for the positive responses, with correlated subject-specific random intercepts shared across both model components.
+
 fit_hurdle_model <- function(dat) {
   brm(
     bf(Ipos ~ t + (1 | p | id), family = bernoulli(link = "probit")) +
@@ -200,6 +202,8 @@ fit_hurdle_model <- function(dat) {
     backend = "rstan"
   )
 }
+
+# The following function extracts the posterior means and posterior standard deviations for the fixed effects, random-effect standard deviations, random-effect correlation, and residual standard deviation from the fitted hurdle model.
 
 summarize_hurdle_fit <- function(fit) {
   res <- as.data.frame(
