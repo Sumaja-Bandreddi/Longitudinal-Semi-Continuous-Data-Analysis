@@ -26,57 +26,105 @@ The data-generating model uses:
 - fixed effects `beta_0 = 0.5` and `beta_t = 0.4`;
 - random-intercept standard deviation `sigma_b = 0.8`;
 - residual standard deviation `sigma_eps = 0.6`;
-- censoring threshold `censor_limit = 0.7`.
   
 ```r
+
+# Required packages 
 library(brms)
 library(dplyr)
 
+# The following function simulates longitudinal left-censored data from a Tobit mixed-effects model for illustrating model fitting in `brms`. It generates repeated measurements for 1,000 subjects, applies left censoring at a specified threshold, and returns a data frame containing the subject identifier, observation time, observed outcome, and censoring indicator.
+
 generate_tobit_data <- function(seed = 1) {
 
-set.seed(seed)
+ # Set random seed for reproducibility
+  set.seed(seed)
+
+  #----------------------------------------------------------
+  # 1) Study design
+  #----------------------------------------------------------
   
-  # --------------------------
-  # 1) Design
-  # --------------------------
-  n_id  <- 1000
-  m     <- 5
+  # Number of subjects
+  n_id <- 1000
+  
+  # Number of repeated measurements per subject
+  m <- 5
+  
+  # Observation times, equally spaced between 0 and 1
   t_grid <- seq(0, 1, length.out = m)
-  
-  id  <- rep(seq_len(n_id), each = m)
+
+  # Create subject IDs (each subject appears m times)
+  id <- rep(seq_len(n_id), each = m)
+
+  # Assign observation times to each subject
   tij <- rep(t_grid, times = n_id)
-  n   <- length(id)
-  
-  # --------------------------
-  # 2) True parameters 
-  # --------------------------
+
+  # Total number of observations
+  n <- length(id)
+
+  #----------------------------------------------------------
+  # 2) True model parameters
+  #----------------------------------------------------------
+
+  # Fixed intercept
   B0 <- 0.5
+
+  # Fixed effect of time
   B1 <- 0.4
-  
-  sigma_b   <- 0.8
+
+  # Standard deviation of the subject-specific random intercept
+  sigma_b <- 0.8
+
+  # Residual (within-subject) standard deviation
   sigma_eps <- 0.6
-  
-  c <- 0.7   # censoring threshold 
-  
-  # --------------------------
-  # 3) Random intercepts
-  # --------------------------
-  b_i0 <- rnorm(n_id, 0, sigma_b)
-  b0   <- b_i0[id]
-  
-  # --------------------------
-  # 4) Latent log-scale model
-  # --------------------------
+
+  # Left-censoring threshold (around 15% censored values) 
+  c <- 0.7
+
+  #----------------------------------------------------------
+  # 3) Generate subject-specific random intercepts
+  #----------------------------------------------------------
+
+  # Draw one random intercept for each subject
+  b_i0 <- rnorm(n_id, mean = 0, sd = sigma_b)
+
+  # Expand the subject-level random intercepts to every observation
+  b0 <- b_i0[id]
+
+  #----------------------------------------------------------
+  # 4) Generate the latent (uncensored) outcome
+  #----------------------------------------------------------
+
+  # Compute the mean of the latent log outcome
+  # μ_ij = β0 + β1*time + b_i
   mu_log <- B0 + B1 * tij + b0
-  
-  logY_star <- rnorm(n, mean = mu_log, sd = sigma_eps)
-  Y_star    <- exp(logY_star)
-  
-  # --------------------------
-  # 5) Left censoring 
-  # --------------------------
+
+  # Generate latent log-scale observations
+  logY_star <- rnorm(
+    n,
+    mean = mu_log,
+    sd = sigma_eps
+  )
+
+  # Transform back to the original outcome scale
+  # This guarantees the latent outcome is positive
+  Y_star <- exp(logY_star)
+
+  #----------------------------------------------------------
+  # 5) Apply left censoring
+  #----------------------------------------------------------
+
+  # Observations below the detection limit are recorded as zero
   Y_obs <- ifelse(Y_star <= c, 0, Y_star)
-  cens  <- ifelse(Y_star <= c, "left", "none")
+
+  # Create the censoring indicator required by brms
+  # "left" indicates a left-censored observation
+  # "none" indicates an uncensored observation
+  cens <- ifelse(Y_star <= c, "left", "none")
+
+  #----------------------------------------------------------
+  # 6) Create the final analysis dataset
+  #----------------------------------------------------------
   
   dat <- data.frame(
     id   = id,      # Subject identifier (1000 subjects, each measured at 5 time points)
@@ -84,6 +132,9 @@ set.seed(seed)
     Y    = Y_obs,   # Observed semi-continuous outcome (0 if left-censored; otherwise the observed positive value)
     cens = cens     # Censoring indicator ("left" = left-censored, "none" = uncensored)
   )
+
+return(dat)
+}
 ```
 
 In this example, `Y` is the observed semi-continuous outcome, where censored values are recorded as zero. 
