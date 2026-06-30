@@ -29,7 +29,7 @@ simulate_and_fit <- function(seed) {
   sigma_b   <- 0.8
   sigma_eps <- 0.6
   
-  c <- 0.5
+  c <- 0.7
   
   # --------------------------
   # 3) Draw random intercepts
@@ -158,7 +158,7 @@ true_values <- data.frame(
   true_value = c(
     0.5,            # B0
     0.4,            # B1
-    (0.5 - log(0.5)) / 0.6,      # alpha0 = B0 / sigma_eps
+    (0.5 - log(0.7)) / 0.6,      # alpha0 = B0 - log(c) / sigma_eps
     0.4 / 0.6,      # alpha1 = B1 / sigma_eps
     0.8,            # sigma_b
     0.8 / 0.6,      # sd(c_i0) = sigma_b / sigma_eps
