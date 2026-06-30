@@ -96,7 +96,6 @@ generate_tobit_data <- function(seed = 1) {
   #----------------------------------------------------------
 
   # Compute the mean of the latent log outcome
-  # μ_ij = β0 + β1*time + b_i
   mu_log <- B0 + B1 * tij + b0
 
   # Generate latent log-scale observations
@@ -106,8 +105,7 @@ generate_tobit_data <- function(seed = 1) {
     sd = sigma_eps
   )
 
-  # Transform back to the original outcome scale
-  # This guarantees the latent outcome is positive
+  # Transform back to the original outcome scale (this guarantees the latent outcome is positive)
   Y_star <- exp(logY_star)
 
   #----------------------------------------------------------
@@ -118,8 +116,6 @@ generate_tobit_data <- function(seed = 1) {
   Y_obs <- ifelse(Y_star <= c, 0, Y_star)
 
   # Create the censoring indicator required by brms
-  # "left" indicates a left-censored observation
-  # "none" indicates an uncensored observation
   cens <- ifelse(Y_star <= c, "left", "none")
 
   #----------------------------------------------------------
