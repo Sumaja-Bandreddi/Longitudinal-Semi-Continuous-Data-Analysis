@@ -140,6 +140,8 @@ A lognormal Tobit model is used because the latent response is generated on the 
 ### Example 1: Fit a lognormal Tobit model
 
 ```r
+#The following function fits a Bayesian Tobit mixed-effects model to the simulated data using `brms`. The model includes a fixed effect for time, a subject-specific random intercept, and a lognormal response distribution with left censoring.
+
 fit_tobit_model <- function(dat) {
   brm(
     bf(Y | cens(cens) ~ t + (1 | id)),
@@ -153,6 +155,8 @@ fit_tobit_model <- function(dat) {
     backend = "rstan"
   )
 }
+
+#The following function extracts the posterior means and posterior standard deviations for the fixed effects, random-intercept standard deviation, and residual standard deviation from the fitted Tobit model.
 
 summarize_tobit_fit <- function(fit) {
   res <- as.data.frame(
@@ -175,7 +179,6 @@ summarize_tobit_fit <- function(fit) {
 tobit_fit <- fit_tobit_model(dat)
 tobit_results <- summarize_tobit_fit(tobit_fit)
 
-print(tobit_results)
 ```
 
 The Tobit model estimates the fixed intercept and time effect, the random-intercept standard deviation, and the residual log-scale standard deviation. 
