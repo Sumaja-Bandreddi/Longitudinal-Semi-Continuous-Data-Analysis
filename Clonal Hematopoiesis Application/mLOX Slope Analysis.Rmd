@@ -24,324 +24,7 @@ mlox <- data  %>%
 
 ```
 
-
 # Models 
-
-## Continuous Models 
-
-### LME with log transformed data 
-
-The Linear Mixed Model used is shown below:
-
-Yij (Yij>0) = B0 + B1t + bi0 + e
-
-```{r}
-library(lme4)
-
-mlox <- mlox %>%
-  group_by(plco_id) %>%
-  mutate(mca_num = dense_rank(mCA_code3)) %>%
-  ungroup()
-
-mlox <- mlox %>%
-  mutate(cf_log = log(cf_FINAL))
-
-mlox_pos <- mlox  %>%
-  filter(cf_FINAL > 0)
-
-
-lmm_log <- lmer(
-  cf_log ~ STUDY_YR + 
-    (1 + STUDY_YR | plco_id),
-  data = mlox_pos
-)
-
-summary(lmm_log)
-
-```
-
-
-### Gamma Distribution
-
-```{r}
-
-library(glmmTMB)
-
-glmm_gamma <- glmmTMB(
-  cf_FINAL ~ STUDY_YR + 
-    (1 + STUDY_YR | plco_id),
-  family = Gamma(link = "log"),
-  data = mlox_pos
-)
-
-summary(glmm_gamma)
-
-```
-
-
-## Logistic Models 
-
-### GLMMIX
-
-The Logistic Generalized Linear Mixed Model used is shown below:
-
-logit(P(Yij>0)) = alpha0 + alpha1t + Ci0
-
-```{r}
-mlox <- mlox %>%
-  mutate(
-    cf_binary = ifelse(cf_FINAL > 0, 1, 0),
-STUDY_YR = as.numeric(STUDY_YR)
-)
-
-glmmix <- glmer(cf_binary ~ STUDY_YR + (1 + STUDY_YR | plco_id), family = binomial(link = "probit"), data = mlox)
-
-summary(glmmix)
-
-```
-
-
-## Joint Model 
-
-### Baeysian
-
-# log
-
-```{r}
-library(brms)
-
-mlox$Ipos <- as.integer(mlox$cf_FINAL > 0)
-
-log_brms <- brm(
-  bf(
-    Ipos ~ STUDY_YR + (1 + STUDY_YR | p | plco_id),
-    family = bernoulli(link = "probit")
-  ) +
-  bf(
-    cf_FINAL | subset(Ipos == 1) ~ STUDY_YR + (1 + STUDY_YR | p | plco_id),
-    family = lognormal()
-  ),
-  data = mlox,
-  backend = "cmdstanr",
-  threads = threading(4),
-  chains = 4,
-  cores = 4,
-  iter = 1500,
-  warmup = 750,
-  sample_prior = "no",
-  control = list(
-    adapt_delta = 0.85,
-    max_treedepth = 12
-  )
-)
-
-print(summary(log_brms), digits = 3)
-
-```
-
-
-
-# gamma 
-
-```{r}
-
-library(brms)
-
-gamma_brms <- brm(
- bf(Ipos ~ STUDY_YR + (1 + STUDY_YR | p | plco_id),
-     family = bernoulli(link = "probit")) +
-    bf(cf_FINAL | subset(Ipos == 1) ~ STUDY_YR + (1 + STUDY_YR  | p | plco_id),
-       family = Gamma(link = "log")),
-  data = mlox,
-  backend = "cmdstanr",           
-  threads = threading(4),         
-  chains = 4,
-  cores = 4,
-  iter = 1500,                    
-  warmup = 750,
-  sample_prior = "no",            
-  control = list(
-    adapt_delta = 0.85,           
-    max_treedepth = 12   
-  
-)
-)
-
-print(summary(gamma_brms), digits = 3)
-
-```
-
-## Comparing joint model and seperate model estimates for gamma distribution 
-
-```{r}
-
-results <- data.frame(
-  Term = c(
-    "B0", "B1",
-    "alpha0", "alpha1",
-    
-    "sigma(b0)", "sigma(b1)",
-    "sigma(c0)", "sigma(c1)",
-    "cor(b0,b1)", "cor(b0,c0)", "cor(b1,c0)",
-    "cor(b0,c1)", "cor(b1,c1)", "cor(c0,c1)"
-  ),
-  
-  Combined_Estimate = c(
-    -3.195,  0.047,
-    1.323,  0.051,
-    
-     1.035,  0.090,
-     1.087,  0.069,
-     0.052,  0.825,  0.264,
-     0.033,  0.128, -0.173
-  ),
-  
-  Combined_SE = c(
-    0.080, 0.009,
-    0.182, 0.046,
-    
-    0.194, 0.059,
-    0.060, 0.018,
-    0.425, 0.096, 0.389,
-    0.240, 0.395, 0.147
-  ),
-  
-  Separate_Estimate = c(
-    -3.184517, 0.047768,
-     3.87888, -0.10703,
-    
-     1.07609, 0.07134,
-     5.2157,  0.9789,
-    
-    -0.83, NA, NA,
-     NA, NA, -0.19
-  ),
-  
-  Separate_SE = c(
-    0.078324, 0.008715,
-    0.30288, 0.08686,
-    
-    NA, NA,
-    NA, NA,
-    
-    NA, NA, NA,
-    NA, NA, NA
-  )
-)
-
-print(results)
-
-```
-
-
-
-
-## Comparing joint model and seperate model estimates for log tranformed normal distribution 
-
-```{r}
-
-results <- data.frame(
-  Term = c(
-    "B0", "B1",
-    "alpha0", "alpha1",
-    
-    "sigma(b0)", "sigma(b1)",
-    "sigma(c0)", "sigma(c1)",
-    "cor(b0,b1)", "cor(b0,c0)", "cor(b1,c0)",
-    "cor(b0,c1)", "cor(b1,c1)", "cor(c0,c1)"
-  ),
-  
-  Combined_Estimate = c(
-    -3.238,  0.047,
-     1.319,  0.052,
-    
-     1.032,  0.091,
-     1.100,  0.085,
-     0.051,  0.808,  0.278,
-     0.081,  0.064, -0.221
-  ),
-  
-  Combined_SE = c(
-    0.083, 0.010,
-    0.185, 0.046,
-    
-    0.198, 0.058,
-    0.061, 0.013,
-    0.420, 0.099, 0.381,
-    0.231, 0.435, 0.115
-  ),
-  
-  Separate_Estimate = c(
-    -3.223027, 0.048199,
-     3.87888, -0.10703,
-    
-     1.0929, 0.0847,
-     5.2157, 0.9789,
-    
-    -0.24, NA, NA,
-     NA, NA, -0.19
-  ),
-  
-  Separate_SE = c(
-    0.079378, 0.009304,
-    0.30288, 0.08686,
-    
-    NA, NA,
-    NA, NA,
-    
-    NA, NA, NA,
-    NA, NA, NA
-  )
-)
-
-print(results)
-
-
-```
-
-
-
-## Tobit Model 
-
-```{r}
-
-censor_point <- min(mlox$cf_log[is.finite(mlox$cf_log)])
-censor_point
-
-mlox$cf_log[!is.finite(mlox$cf_log)] <- censor_point
-
-mlox$cens_type <- ifelse(mlox$cf_log == censor_point, -1, 0)
-
-tobit_brms <- brm(
-  bf(cf_log | cens(cens_type) ~ STUDY_YR + (1 + STUDY_YR | ID | plco_id)),
-  family = gaussian(),
-  data = mlox,
-  chains = 4, cores = 4
-)
-
-summary(tobit_brms)
-```
-
-
-```{r}
-
-results <- data.frame(
-  Term = c("Intercept", "STUDY_YR", "sigma(b0)","sigma(b1)", "p(rho)", "sigma(e)"),
-  
-  Estimate = c(-3.53, 0.10, 1.26, 0.05, 0.01, 0.72),
-  SE       = c(0.06, 0.02, 0.08, 0.03, 0.42, 0.03)
-)
-
-print(results)
-
-```
-
-#########################################################################################################
-
-## Becky's analysis 
-
-### Becky's Model 
-
 
 ### LME 
 
@@ -368,37 +51,6 @@ mlox_lme <- lmer(
 summary(mlox_lme)
 ```
 
-
-
-```{r}
-vc_fun <- function(fit) {
-  vc <- VarCorr(fit)[["plco_id"]]
-  sd <- attr(vc, "stddev")
-  cor <- attr(vc, "correlation")
-
-  c(
-    var_intercept = sd[1]^2,
-    var_slope     = sd[2]^2,
-    cor_int_slope = cor[1,2],
-    resid_var     = sigma(fit)^2
-  )
-}
-
-set.seed(123)
-
-boot_vc <- bootMer(
-  mlox_lme,
-  FUN = vc_fun,
-  nsim = 1000,
-  use.u = FALSE,
-  type = "parametric"
-)
-
-se <- apply(boot_vc$t, 2, sd)
-
-se
-```
-
 ### GLMMIX
 
 ```{r}
@@ -420,7 +72,7 @@ mlox_glmmix <- glmer(
 summary(mlox_glmmix)
 ```
 
-### hurdle model 
+### Hurdle Model 
 
 ```{r}
 
@@ -462,7 +114,7 @@ print(summary(mlox_hurdle), digits = 3)
 ```
 
 
-### Table 
+### Hurdle Table 
 
 ```{r}
 results <- data.frame(
@@ -566,6 +218,8 @@ mlox_tobit <- brm(
 print(summary(mlox_tobit), digits = 3)
 ```
 
+### Tobit Table 
+
 ```{r}
 results <- data.frame(
   Term = c(
@@ -612,8 +266,7 @@ print(results)
 ```
 
 
-
-## Figure 3 
+## Figure
 
 ### LME Plot 
 
