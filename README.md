@@ -18,61 +18,86 @@ The example below generates one longitudinal semi-continuous dataset from a Tobi
 
 ### Generate data from a Tobit model
 
+### Simulation Notes
+
+The data-generating model uses:
+
+- `n_id = 1000` subjects;
+- `m = 5` repeated measurements per subject;
+- time scaled from 0 to 1;
+- fixed effects `beta_0 = 0.5` and `beta_t = 0.4`;
+- random-intercept standard deviation `sigma_b = 0.8`;
+- residual standard deviation `sigma_eps = 0.6`;
+- censoring threshold `censor_limit = 0.7`.
+  
 ```r
 library(brms)
 library(dplyr)
 
-generate_tobit_data <- function(seed = 1,
-                                n_id = 1000,
-                                m = 5,
-                                beta_0 = 0.5,
-                                beta_t = 0.4,
-                                sigma_b = 0.8,
-                                sigma_eps = 0.6,
-                                censor_limit = 0.7) {
-  set.seed(seed)
+generate_tobit_data <- function(seed = 1) {
 
+set.seed(seed)
+  
+  # --------------------------
+  # 1) Design
+  # --------------------------
+  n_id  <- 1000
+  m     <- 5
   t_grid <- seq(0, 1, length.out = m)
-
-  id <- rep(seq_len(n_id), each = m)
-  t <- rep(t_grid, times = n_id)
-  n <- length(id)
-
-  b_i0 <- rnorm(n_id, mean = 0, sd = sigma_b)
-  b0 <- b_i0[id]
-
-  mu_log <- beta_0 + beta_t * t + b0
-  log_y_star <- rnorm(n, mean = mu_log, sd = sigma_eps)
-  y_star <- exp(log_y_star)
-
-  censored <- y_star <= censor_limit
-
-  data.frame(
-    id = id,
-    t = t,
-    Y = ifelse(censored, 0, y_star),
-    Y_cens = ifelse(censored, censor_limit, y_star),
-    cens = ifelse(censored, "left", "none")
-  ) %>%
-    mutate(
-      Ipos = as.integer(Y > censor_limit)
-    )
-}
-
-dat <- generate_tobit_data(seed = 1)
-
-mean(dat$cens == "left")
-head(dat)
+  
+  id  <- rep(seq_len(n_id), each = m)
+  tij <- rep(t_grid, times = n_id)
+  n   <- length(id)
+  
+  # --------------------------
+  # 2) True parameters 
+  # --------------------------
+  B0 <- 0.5
+  B1 <- 0.4
+  
+  sigma_b   <- 0.8
+  sigma_eps <- 0.6
+  
+  c <- 0.7   # censoring threshold 
+  
+  # --------------------------
+  # 3) Random intercepts
+  # --------------------------
+  b_i0 <- rnorm(n_id, 0, sigma_b)
+  b0   <- b_i0[id]
+  
+  # --------------------------
+  # 4) Latent log-scale model
+  # --------------------------
+  mu_log <- B0 + B1 * tij + b0
+  
+  logY_star <- rnorm(n, mean = mu_log, sd = sigma_eps)
+  Y_star    <- exp(logY_star)
+  
+  # --------------------------
+  # 5) Left censoring 
+  # --------------------------
+  Y_obs <- ifelse(Y_star <= c, 0, Y_star)
+  cens  <- ifelse(Y_star <= c, "left", "none")
+  
+  dat <- data.frame(
+    id   = id,      # Subject identifier (1000 subjects, each measured at 5 time points)
+    t    = tij,     # Observation time (scaled from 0 to 1)
+    Y    = Y_obs,   # Observed semi-continuous outcome (0 if left-censored; otherwise the observed positive value)
+    cens = cens     # Censoring indicator ("left" = left-censored, "none" = uncensored)
+  )
 ```
 
-In this example, `Y` is the observed semi-continuous outcome, where censored values are recorded as zero. The variable `Y_cens` stores the censoring point for censored observations and is used in the Tobit likelihood.
+In this example, `Y` is the observed semi-continuous outcome, where censored values are recorded as zero. 
+
+A lognormal Tobit model is used because the latent response is generated on the log scale and exponentiated, so the uncensored observations are lognormally distributed. The observed zeros result exclusively from left censoring below the detection limit rather than from a distinct zero-generating process, making the lognormal Tobit model a special case of a hurdle model.
 
 ### Example 1: Fit a lognormal Tobit model
 
 ```r
 fit_tobit_model <- function(dat) {
   brm(
-    bf(Y_cens | cens(cens) ~ t + (1 | id)),
+    bf(Y | cens(cens) ~ t + (1 | id)),
     data = dat,
     family = lognormal(),
     chains = 4,
@@ -108,7 +133,7 @@ tobit_results <- summarize_tobit_fit(tobit_fit)
 print(tobit_results)
 ```
 
-The Tobit model estimates the fixed intercept and time effect, the random-intercept standard deviation, and the residual log-scale standard deviation.
+The Tobit model estimates the fixed intercept and time effect, the random-intercept standard deviation, and the residual log-scale standard deviation. 
 
 ### Example 2: Fit a hurdle model to the same Tobit-generated data
 
@@ -156,7 +181,7 @@ hurdle_results <- summarize_hurdle_fit(hurdle_fit)
 print(hurdle_results)
 ```
 
-The hurdle model separates the probability of being above the censoring limit from the positive outcome distribution. In this simulation setting, the data are generated from a Tobit model, so this fit is intentionally cross-model.
+The hurdle model separates the probability of being above the censoring limit from the positive outcome distribution. A probit link is used for the hurdle component because the Tobit model can be viewed as a special case of the hurdle model under a probit link, where both the binary and continuous components arise from the same latent normal process
 
 ### Running the Provided Simulation Scripts
 
@@ -205,18 +230,6 @@ The hurdle script returns posterior summaries for:
 - `sd_id__Ipos_Intercept`: subject-level random-intercept standard deviation for the binary model;
 - `cor_id__Ipos_Intercept__Y_Intercept`: correlation between subject-level random intercepts across the binary and positive outcome parts;
 - `sigma_Y`: residual standard deviation for the positive lognormal outcome model.
-
-### Simulation Notes
-
-The data-generating model uses:
-
-- `n_id = 1000` subjects;
-- `m = 5` repeated measurements per subject;
-- time scaled from 0 to 1;
-- fixed effects `beta_0 = 0.5` and `beta_t = 0.4`;
-- random-intercept standard deviation `sigma_b = 0.8`;
-- residual standard deviation `sigma_eps = 0.6`;
-- censoring threshold `censor_limit = 0.7`.
 
 
 ## Repository Structure
