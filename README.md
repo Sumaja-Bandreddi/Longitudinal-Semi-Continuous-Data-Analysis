@@ -230,7 +230,6 @@ summarize_hurdle_fit <- function(fit) {
 hurdle_fit <- fit_hurdle_model(dat)
 hurdle_results <- summarize_hurdle_fit(hurdle_fit)
 
-print(hurdle_results)
 ```
 
 The hurdle model separates the probability of being above the censoring limit from the positive outcome distribution. A probit link is used for the hurdle component because the Tobit model can be viewed as a special case of the hurdle model under a probit link, where both the binary and continuous components arise from the same latent normal process
