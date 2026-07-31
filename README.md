@@ -178,4 +178,10 @@ Buerkner, Paul-Christian (2017) brms: An R package for Bayesian multilevel model
 
 Amemiya, Takeshi (1984) Tobit models: A survey. Journal of Econometrics, 24(1-2): 3-61.
 
-Kelly, R. L. and Brown, D. W. and Zhou, W. and Hubbard, A. K. and Young, C. D. and Barnao, K. M. and Klein, A. and Dutta, D. and Vogt, A. and Liu, J. and Wang, J. and Huang, W.-Y. and Freedman, N. D. and Chanock, S. J. and Albert, P. S. and Machiela, M. J. (2026) Longitudinal characterization of mosaic chromosomal alterations identifies factors influencing clonal dynamics of leukocytes. Nature Communications. Under revision.
+Kelly, R. L. and Brown, D. W. and Zhou, W. and Hubbard, A. K. and Young, C. D. and Barnao, K. M. and Klein, A. and Dutta, D. and Vogt, A. and Liu, J. and Wang, J. and Huang, W.-Y. and Freedman, N. D. and 
+
+Chanock, S. J. and Albert, P. S. and Machiela, M. J. (2026) Longitudinal characterization of mosaic chromosomal alterations identifies factors influencing clonal dynamics of leukocytes. Nature Communications. Under revision.
+
+## Data Sharing 
+
+Access to the PLCO datasets can be requested through the Cancer Data Access System (CDAS) at https://cdas.cancer.gov/.
